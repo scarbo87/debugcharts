@@ -88,6 +88,8 @@ const (
 	maxCount int = 86400
 )
 
+var Enable = true
+
 var (
 	data           DataStorage
 	lastPause      uint32
@@ -104,71 +106,72 @@ var (
 )
 
 func (s *server) gatherData() {
-	timer := time.Tick(time.Second)
-
 	for {
-		select {
-		case now := <-timer:
-			nowUnix := now.Unix()
+		time.Sleep(time.Second * 1)
 
-			var ms runtime.MemStats
-			runtime.ReadMemStats(&ms)
-
-			u := update{
-				Ts:           nowUnix * 1000,
-				Block:        pprof.Lookup("block").Count(),
-				Goroutine:    pprof.Lookup("goroutine").Count(),
-				Heap:         pprof.Lookup("heap").Count(),
-				Mutex:        pprof.Lookup("mutex").Count(),
-				Threadcreate: pprof.Lookup("threadcreate").Count(),
-			}
-			data.Pprof = append(data.Pprof, PprofPair{
-				uint64(nowUnix) * 1000,
-				u.Block,
-				u.Goroutine,
-				u.Heap,
-				u.Mutex,
-				u.Threadcreate,
-			})
-
-			cpuTimes, err := myProcess.Times()
-			if err != nil {
-				cpuTimes = &cpu.TimesStat{}
-			}
-
-			if prevUserTime != 0 {
-				u.CPUUser = cpuTimes.User - prevUserTime
-				u.CPUSys = cpuTimes.System - prevSysTime
-				data.CPUUsage = append(data.CPUUsage, CPUPair{uint64(nowUnix) * 1000, u.CPUUser, u.CPUSys})
-			}
-
-			prevUserTime = cpuTimes.User
-			prevSysTime = cpuTimes.System
-
-			mutex.Lock()
-
-			bytesAllocated := ms.Alloc
-			u.BytesAllocated = bytesAllocated
-			data.BytesAllocated = append(data.BytesAllocated, SimplePair{uint64(nowUnix) * 1000, bytesAllocated})
-			if lastPause == 0 || lastPause != ms.NumGC {
-				gcPause := ms.PauseNs[(ms.NumGC+255)%256]
-				u.GcPause = gcPause
-				data.GcPauses = append(data.GcPauses, SimplePair{uint64(nowUnix) * 1000, gcPause})
-				lastPause = ms.NumGC
-			}
-
-			if len(data.BytesAllocated) > maxCount {
-				data.BytesAllocated = data.BytesAllocated[len(data.BytesAllocated)-maxCount:]
-			}
-
-			if len(data.GcPauses) > maxCount {
-				data.GcPauses = data.GcPauses[len(data.GcPauses)-maxCount:]
-			}
-
-			mutex.Unlock()
-
-			s.sendToConsumers(u)
+		if !Enable {
+			continue
 		}
+
+		nowUnix := time.Now().Unix()
+
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+
+		u := update{
+			Ts:           nowUnix * 1000,
+			Block:        pprof.Lookup("block").Count(),
+			Goroutine:    pprof.Lookup("goroutine").Count(),
+			Heap:         pprof.Lookup("heap").Count(),
+			Mutex:        pprof.Lookup("mutex").Count(),
+			Threadcreate: pprof.Lookup("threadcreate").Count(),
+		}
+		data.Pprof = append(data.Pprof, PprofPair{
+			uint64(nowUnix) * 1000,
+			u.Block,
+			u.Goroutine,
+			u.Heap,
+			u.Mutex,
+			u.Threadcreate,
+		})
+
+		cpuTimes, err := myProcess.Times()
+		if err != nil {
+			cpuTimes = &cpu.TimesStat{}
+		}
+
+		if prevUserTime != 0 {
+			u.CPUUser = cpuTimes.User - prevUserTime
+			u.CPUSys = cpuTimes.System - prevSysTime
+			data.CPUUsage = append(data.CPUUsage, CPUPair{uint64(nowUnix) * 1000, u.CPUUser, u.CPUSys})
+		}
+
+		prevUserTime = cpuTimes.User
+		prevSysTime = cpuTimes.System
+
+		mutex.Lock()
+
+		bytesAllocated := ms.Alloc
+		u.BytesAllocated = bytesAllocated
+		data.BytesAllocated = append(data.BytesAllocated, SimplePair{uint64(nowUnix) * 1000, bytesAllocated})
+		if lastPause == 0 || lastPause != ms.NumGC {
+			gcPause := ms.PauseNs[(ms.NumGC+255)%256]
+			u.GcPause = gcPause
+			data.GcPauses = append(data.GcPauses, SimplePair{uint64(nowUnix) * 1000, gcPause})
+			lastPause = ms.NumGC
+		}
+
+		if len(data.BytesAllocated) > maxCount {
+			data.BytesAllocated = data.BytesAllocated[len(data.BytesAllocated)-maxCount:]
+		}
+
+		if len(data.GcPauses) > maxCount {
+			data.GcPauses = data.GcPauses[len(data.GcPauses)-maxCount:]
+		}
+
+		mutex.Unlock()
+
+		s.sendToConsumers(u)
 	}
 }
 
