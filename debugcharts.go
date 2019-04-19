@@ -20,6 +20,7 @@ package debugcharts
 import (
 	"encoding/json"
 	"fmt"
+	"go.uber.org/atomic"
 	"log"
 	"net/http"
 	"os"
@@ -88,7 +89,11 @@ const (
 	maxCount int = 86400
 )
 
-var Enable = true
+var Enable *atomic.Bool
+
+func init() {
+	Enable = atomic.NewBool(false)
+}
 
 var (
 	data           DataStorage
@@ -109,7 +114,7 @@ func (s *server) gatherData() {
 	for {
 		time.Sleep(time.Second * 1)
 
-		if !Enable {
+		if !Enable.Load() {
 			continue
 		}
 
